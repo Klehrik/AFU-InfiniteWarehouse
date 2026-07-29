@@ -8,7 +8,7 @@ using Il2CppQuantum_BigScreen;
 using Il2CppView_Humanoid;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
-[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.1", "Klehrik", null)]
+[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.2", "Klehrik", null)]
 [assembly: MelonGame("Videocult", "Airframe")]
 
 namespace InfiniteWarehouse;
@@ -21,7 +21,7 @@ public class Core : MelonMod
     private LabelScreen labelComp;
     private static int mostRecentFrame = 0; // Prevent duplicate requests on the same frame
     public static MelonLogger.Instance Logger => Melon<Core>.Logger;
-    private const int BarkID = 20260728;
+    private const int ActionID = 20260728;
 
     public override void OnUpdate()
     {
@@ -68,9 +68,9 @@ public class Core : MelonMod
         {
             if (view.isLocal)
             {
-                var cmd = new BarkCommand();
-                cmd.bark = BarkID;
-                cmd.senderPlayer = view.playerEntityRef;
+                var cmd = new SpecialActionCommand();
+                cmd.action = ActionID;
+                cmd.player = view.playerEntityRef;
                 game.SendCommand(cmd);
             }
         }
@@ -99,14 +99,14 @@ public class Core : MelonMod
         return false;
     }
 
-    // Hijacking BarkCommand to signal delay request
+    // Hijacking SpecialActionCommand to signal delay request
     // For some reason, Execute can call multiple times on the same frame
-    [HarmonyPatch(typeof(BarkCommand), nameof(BarkCommand.Execute))]
-    public static class BarkCommandPatch
+    [HarmonyPatch(typeof(SpecialActionCommand), nameof(SpecialActionCommand.Execute))]
+    public static class SpecialActionCommandPatch
     {
-        static bool Prefix(BarkCommand __instance, Frame f)
+        static bool Prefix(SpecialActionCommand __instance, Frame f)
         {
-            if (__instance.bark == BarkID)
+            if (__instance.action == ActionID)
             {
                 DelayAdd(f.Number);
                 return false;
