@@ -1,46 +1,77 @@
 ﻿using MelonLoader;
 using HarmonyLib;
 using UnityEngine;
-using UnityEngine.InputSystem;
+using UnityEngine.SceneManagement;
+using Il2Cpp;
 using Il2CppQuantum;
 using Il2CppView_BigScreen;
 using Il2CppQuantum_BigScreen;
-using Il2CppView_Humanoid;
-using Il2CppInterop.Runtime.InteropTypes.Arrays;
+using AFUtils;
 
-[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.2", "Klehrik", null)]
+[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.3", "Klehrik", null)]
 [assembly: MelonGame("Videocult", "Airframe")]
+[assembly: MelonAdditionalDependencies("AFUtils")]
 
 namespace InfiniteWarehouse;
 
 public class Core : MelonMod
 {
     private float timer    = 0f;
-    private float timerMax = 30f;
+    private float timerMax = 29.98f;
     private bool infinite  = false;
     private LabelScreen labelComp;
-    private static int mostRecentFrame = 0; // Prevent duplicate requests on the same frame
+    private Command delayCmd;
+
     public static MelonLogger.Instance Logger => Melon<Core>.Logger;
-    private const int ActionID = 20260728;
+
+    public override void OnInitializeMelon()
+    {
+        var option = new ActionMenu.Option(
+            () =>
+            {
+                delayCmd.Send();
+            },
+            "delay vote"
+        );
+        var option2 = new ActionMenu.Option(
+            () =>
+            {
+                infinite = !infinite;
+            }
+        );
+        ActionMenu.RegisterForCollection(
+            () =>
+            {
+                var controllerInstance = PhotonController.instance;
+                if (controllerInstance != null
+                 && controllerInstance.IsMasterClient()
+                 && SceneManager.GetActiveScene().name == "Warehouse")
+                {
+                    ActionMenu.AddOption(option);
+                    ActionMenu.AddOption(option2, "delay forever [" + (infinite ? "ON" : "OFF") + "]");
+                }
+            }
+        );
+
+        delayCmd = new Command(
+            "InfiniteWarehouse_Delay",
+            (Frame f) =>
+            {
+                if (!f.IsVerified) return;
+
+                GameSettingsSystemPatch.Instance.ChangeSetting(f, GameSettingsSystem.ConsoleID.DelayVote);
+                Logger.Msg("Added 30 seconds to vote timer.");
+            }
+        );
+    }
 
     public override void OnUpdate()
     {
-        if (Keyboard.current.oKey.wasPressedThisFrame)
-        {
-            DelayRequest();
-        }
-
-        if (Keyboard.current.iKey.wasPressedThisFrame)
-        {
-            infinite = !infinite;
-            Logger.Msg("Infinite: " + infinite.ToString());
-        }
-
         timer -= UnityEngine.Time.deltaTime;
         if (infinite && timer <= 0 && !VoteStarted())
         {
             timer = timerMax;
-            DelayRequest();
+            delayCmd.Send();
         }
     }
 
@@ -48,48 +79,12 @@ public class Core : MelonMod
     {
         var transform = GameObject.Find("ConsolesScreensPodiums")?.transform.Find("LabelScreen");
         if (transform == null) return;
-
         var obj = transform.gameObject;
         if (obj == null) return;
-
         var comp = obj.GetComponent<LabelScreen>();
         if (comp == null) return;
 
         labelComp = comp;
-    }
-
-    public void DelayRequest()
-    {
-        var game = QuantumRunner.Default?.Game;
-        if (game == null) return;
-
-        Il2CppArrayBase<Humanoid_View> views = GameObject.FindObjectsOfType<Humanoid_View>();
-        foreach (var view in views)
-        {
-            if (view.isLocal)
-            {
-                var cmd = new SpecialActionCommand();
-                cmd.action = ActionID;
-                cmd.player = view.playerEntityRef;
-                game.SendCommand(cmd);
-            }
-        }
-    }
-
-    public static void DelayAdd(int frameNumber)
-    {
-        if (GameSettingsSystemPatch.Instance == null) return;
-        if (frameNumber <= mostRecentFrame) return;
-        mostRecentFrame = frameNumber;
-
-        var game = QuantumRunner.Default?.Game;
-        if (game == null) return;
-
-        var frame = game.Frames?.Verified;
-        if (frame == null) return;
-
-        GameSettingsSystemPatch.Instance.ChangeSetting(frame, GameSettingsSystem.ConsoleID.DelayVote);
-        Logger.Msg("Added 30 seconds to vote timer.");
     }
 
     public bool VoteStarted()
@@ -97,22 +92,6 @@ public class Core : MelonMod
         if (labelComp == null) return true;
         if (labelComp.oldText.Contains("00:00")) return true;
         return false;
-    }
-
-    // Hijacking SpecialActionCommand to signal delay request
-    // For some reason, Execute can call multiple times on the same frame
-    [HarmonyPatch(typeof(SpecialActionCommand), nameof(SpecialActionCommand.Execute))]
-    public static class SpecialActionCommandPatch
-    {
-        static bool Prefix(SpecialActionCommand __instance, Frame f)
-        {
-            if (__instance.action == ActionID)
-            {
-                DelayAdd(f.Number);
-                return false;
-            }
-            return true;
-        }
     }
 
     [HarmonyPatch(typeof(GameSettingsSystem), nameof(GameSettingsSystem.OnInit))]

@@ -15,6 +15,9 @@
 	</PropertyGroup>
 
 	<ItemGroup>
+		<Reference Include="AFUtils">
+		  <HintPath>..\..\..\..\..\Program Files (x86)\Steam\steamapps\common\Airframe Ultra - Beta 5 Modded\Mods\AFUtils.dll</HintPath>
+		</Reference>
 		<Reference Include="Assembly-CSharp">
 			<HintPath>$(GamePath)/MelonLoader\Il2CppAssemblies\Assembly-CSharp.dll</HintPath>
 		</Reference>
