@@ -6,9 +6,10 @@ using Il2Cpp;
 using Il2CppQuantum;
 using Il2CppView_BigScreen;
 using Il2CppQuantum_BigScreen;
+using Il2CppPhoton.Realtime;
 using AFUtils;
 
-[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.3", "Klehrik", null)]
+[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.4", "Klehrik", null)]
 [assembly: MelonGame("Videocult", "Airframe")]
 [assembly: MelonAdditionalDependencies("AFUtils")]
 
@@ -16,11 +17,19 @@ namespace InfiniteWarehouse;
 
 public class Core : MelonMod
 {
-    private float timer    = 0f;
-    private float timerMax = 29.98f;
-    private bool infinite  = false;
-    private LabelScreen labelComp;
-    private Command delayCmd;
+    private static float timer = 0f;
+    private static float timerMax = 29.98f;
+    private static bool infinite = false;
+    private static bool infiniteOld = false;
+    private static LabelScreen labelComp;
+
+    private static bool allow = true;
+    private static int responses;
+    private static int responsesRequired;
+
+    private static Command delayCmd;
+    private static Command queryCmd;
+    private static Command respondCmd;
 
     public static MelonLogger.Instance Logger => Melon<Core>.Logger;
 
@@ -37,11 +46,14 @@ public class Core : MelonMod
             () =>
             {
                 infinite = !infinite;
+                infiniteOld = infinite;
             }
         );
         ActionMenu.RegisterForCollection(
             () =>
             {
+                if (!allow) return;
+
                 var controllerInstance = PhotonController.instance;
                 if (controllerInstance != null
                  && controllerInstance.IsMasterClient()
@@ -57,10 +69,42 @@ public class Core : MelonMod
             "InfiniteWarehouse_Delay",
             (Frame f) =>
             {
+                if (!allow) return;
                 if (!f.IsVerified) return;
 
                 GameSettingsSystemPatch.Instance.ChangeSetting(f, GameSettingsSystem.ConsoleID.DelayVote);
-                Logger.Msg("Added 30 seconds to vote timer.");
+                Logger.Msg("Added 30 seconds to vote timer");
+            }
+        );
+        queryCmd = new Command(
+            "InfiniteWarehouse_Query",
+            (Frame f) =>
+            {
+                var controllerInstance = PhotonController.instance;
+                if (controllerInstance == null
+                 || !controllerInstance.IsMasterClient())
+                {
+                    respondCmd.Send();
+                }
+            }
+        );
+        respondCmd = new Command(
+            "InfiniteWarehouse_Respond",
+            (Frame f) =>
+            {
+                var controllerInstance = PhotonController.instance;
+                if (controllerInstance != null
+                 && controllerInstance.IsMasterClient())
+                {
+                    responses += 1;
+                    var met = responses >= responsesRequired;
+                    if (met)
+                    {
+                        allow = true;
+                        infinite = infiniteOld;
+                    }
+                    Logger.Msg($"Responses: {responses} /{responsesRequired}" + (met ? " :)" : ""));
+                }
             }
         );
     }
@@ -85,13 +129,39 @@ public class Core : MelonMod
         if (comp == null) return;
 
         labelComp = comp;
+        allow = true;
     }
 
-    public bool VoteStarted()
+    private bool VoteStarted()
     {
         if (labelComp == null) return true;
         if (labelComp.oldText.Contains("00:00")) return true;
         return false;
+    }
+
+    private static async void QueryLobby(float wait)
+    {
+        await Task.Delay(TimeSpan.FromSeconds(wait));
+
+        var controllerInstance = PhotonController.instance;
+        if (controllerInstance != null
+         && controllerInstance.IsMasterClient())
+        {
+            responses = 0;
+            responsesRequired = controllerInstance.GetCurrentRoomPlayers().Count - 1;
+            Logger.Msg($"Querying lobby (need {responsesRequired} responses)");
+
+            if (responsesRequired <= 0)
+            {
+                allow = true;
+                infinite = infiniteOld;
+            }
+            else
+            {
+                infinite = false;
+                queryCmd.Send();
+            }
+        }
     }
 
     [HarmonyPatch(typeof(GameSettingsSystem), nameof(GameSettingsSystem.OnInit))]
@@ -102,6 +172,26 @@ public class Core : MelonMod
         static void Postfix(GameSettingsSystem __instance)
         {
             Instance = __instance;
+        }
+    }
+
+    [HarmonyPatch(typeof(InRoomCallbacksContainer))]
+    public static class InRoomCallbacksContainerPatch
+    {
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(InRoomCallbacksContainer.OnPlayerEnteredRoom))]
+        static void OnPlayerEnteredRoom(Il2CppPhoton.Realtime.Player newPlayer)
+        {
+            allow = false;
+            QueryLobby(1.5f);
+        }
+
+        [HarmonyPostfix]
+        [HarmonyPatch(nameof(InRoomCallbacksContainer.OnPlayerLeftRoom))]
+        static void OnPlayerLeftRoom(Il2CppPhoton.Realtime.Player otherPlayer)
+        {
+            allow = false;
+            QueryLobby(0);
         }
     }
 
