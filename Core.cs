@@ -7,6 +7,8 @@ using Il2CppQuantum;
 using Il2CppView_BigScreen;
 using Il2CppQuantum_BigScreen;
 using Il2CppPhoton.Realtime;
+using Il2CppPhoton.Client;
+using Il2CppQuantum_Core;
 using AFUtils;
 
 [assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.4", "Klehrik", null)]
@@ -18,7 +20,7 @@ namespace InfiniteWarehouse;
 public class Core : MelonMod
 {
     private static float timer = 0f;
-    private static float timerMax = 29.98f;
+    private static float timerMax = 15f;
     private static bool infinite = false;
     private static bool infiniteOld = false;
     private static LabelScreen labelComp;
@@ -104,6 +106,7 @@ public class Core : MelonMod
                         infinite = infiniteOld;
                     }
                     Logger.Msg($"Responses: {responses} /{responsesRequired}" + (met ? " :)" : ""));
+                    Logger.Msg("Reenabled options");
                 }
             }
         );
@@ -114,8 +117,10 @@ public class Core : MelonMod
         timer -= UnityEngine.Time.deltaTime;
         if (infinite && timer <= 0 && !VoteStarted())
         {
-            timer = timerMax;
-            delayCmd.Send();
+            if (delayCmd.Send())
+            {
+                timer = timerMax;
+            }
         }
     }
 
@@ -141,11 +146,18 @@ public class Core : MelonMod
 
     private static async void QueryLobby(float wait)
     {
-        await Task.Delay(TimeSpan.FromSeconds(wait));
+        allow = false;
+        Logger.Msg($"Disabled options");
+
+        if (wait > 0)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(wait));
+        }
 
         var controllerInstance = PhotonController.instance;
         if (controllerInstance != null
-         && controllerInstance.IsMasterClient())
+         && controllerInstance.IsMasterClient()
+         && SceneManager.GetActiveScene().name == "Warehouse")
         {
             responses = 0;
             responsesRequired = controllerInstance.GetCurrentRoomPlayers().Count - 1;
@@ -155,11 +167,15 @@ public class Core : MelonMod
             {
                 allow = true;
                 infinite = infiniteOld;
+                Logger.Msg("Reenabled options");
             }
             else
             {
                 infinite = false;
-                queryCmd.Send();
+                if (!queryCmd.Send(out var error))
+                {
+                    Logger.Msg(error);
+                }
             }
         }
     }
@@ -182,15 +198,13 @@ public class Core : MelonMod
         [HarmonyPatch(nameof(InRoomCallbacksContainer.OnPlayerEnteredRoom))]
         static void OnPlayerEnteredRoom(Il2CppPhoton.Realtime.Player newPlayer)
         {
-            allow = false;
-            QueryLobby(1.5f);
+            QueryLobby(2f);
         }
 
         [HarmonyPostfix]
         [HarmonyPatch(nameof(InRoomCallbacksContainer.OnPlayerLeftRoom))]
         static void OnPlayerLeftRoom(Il2CppPhoton.Realtime.Player otherPlayer)
         {
-            allow = false;
             QueryLobby(0);
         }
     }
