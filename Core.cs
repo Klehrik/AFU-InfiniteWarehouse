@@ -10,8 +10,9 @@ using Il2CppPhoton.Realtime;
 using Il2CppPhoton.Client;
 using Il2CppQuantum_Core;
 using AFUtils;
+using System.Diagnostics.Metrics;
 
-[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.4", "Klehrik", null)]
+[assembly: MelonInfo(typeof(InfiniteWarehouse.Core), "InfiniteWarehouse", "1.0.5", "Klehrik", null)]
 [assembly: MelonGame("Videocult", "Airframe")]
 [assembly: MelonAdditionalDependencies("AFUtils")]
 
@@ -20,7 +21,7 @@ namespace InfiniteWarehouse;
 public class Core : MelonMod
 {
     private static float timer = 0f;
-    private static float timerMax = 15f;
+    private static float timerMax = 20f;
     private static bool infinite = false;
     private static bool infiniteOld = false;
     private static LabelScreen labelComp;
@@ -198,7 +199,7 @@ public class Core : MelonMod
         [HarmonyPatch(nameof(InRoomCallbacksContainer.OnPlayerEnteredRoom))]
         static void OnPlayerEnteredRoom(Il2CppPhoton.Realtime.Player newPlayer)
         {
-            QueryLobby(2f);
+            QueryLobby(2.5f);
         }
 
         [HarmonyPostfix]
@@ -216,6 +217,42 @@ public class Core : MelonMod
         static void Prefix(ref bool newScreenOn)
         {
             newScreenOn = true;
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerJoinSystem), nameof(PlayerJoinSystem.OnPlayerAdded))]
+    public static class PlayerJoinSystemPatch
+    {
+        static void Postfix(PlayerJoinSystem __instance)
+        {
+            var controllerInstance = PhotonController.instance;
+            if (controllerInstance.IsMasterClient())
+            {
+                var client = controllerInstance.client;
+                var room = client.CurrentRoom;
+                if (client.CurrentRoom != null)
+                {
+                    var commandMapping = new PhotonHashtable();
+                    commandMapping.Add("enabled", infiniteOld.ToString());
+                    var properties = new PhotonHashtable();
+                    properties.Add("InfiniteWarehouse", commandMapping);
+                    client.LocalPlayer.SetCustomProperties(properties, null);
+                }
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(PhotonController), nameof(PhotonController.OnPlayerPropertiesUpdate))]
+    public static class PhotonControllerPatch
+    {
+        static void Postfix(Il2CppPhoton.Realtime.Player targetPlayer, PhotonHashtable changedProps)
+        {
+            if (targetPlayer.IsLocal) return;
+            if (!changedProps.ContainsKey("InfiniteWarehouse")) return;
+
+            var commands = changedProps["InfiniteWarehouse"].Cast<PhotonHashtable>();
+            infinite = bool.Parse(commands["enabled"].ToString());
+            infiniteOld = infinite;
         }
     }
 }
