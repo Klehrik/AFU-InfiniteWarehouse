@@ -96,15 +96,18 @@ public class Core : MelonMod
             "InfiniteWarehouse_Response",
             (Il2CppPhoton.Realtime.Player player, Dictionary<string, string> data) =>
             {
-                if (!responses.Contains(player))
+                if (Misc.IsHost())
                 {
-                    responses.Add(player);
-                    var met = responses.Count >= responsesRequired;
-                    Logger.Msg($"Responses: {responses.Count} /{responsesRequired}" + (met ? " :)" : ""));
-                    if (met)
+                    if (!responses.Contains(player))
                     {
-                        allow = true;
-                        Logger.Msg("Reenabled options");
+                        responses.Add(player);
+                        var met = responses.Count >= responsesRequired;
+                        Logger.Msg($"Responses: {responses.Count} /{responsesRequired}" + (met ? " :)" : ""));
+                        if (met)
+                        {
+                            allow = true;
+                            Logger.Msg("Reenabled options");
+                        }
                     }
                 }
             }
